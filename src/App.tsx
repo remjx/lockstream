@@ -212,7 +212,7 @@ export default function App() {
         <div style={{ display: "inline-block", marginLeft: "12px" }}>
           <a href="https://github.com/remjx/lockstream">
             <img
-              src="/lockstream/github.png"
+              src={`${process.env.PUBLIC_URL}/github.png`}
               alt="source code"
               height={32}
               width={32}
