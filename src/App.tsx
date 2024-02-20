@@ -34,7 +34,7 @@ declare const unlockCoins: any;
 export default function App() {
   const [connecting, setConnecting] = useState(false);
   const [connectedWalletAddress, setConnectedWalletAddress] = useState("");
-  const [balance, setBalance] = useState(0);
+  const [balance, setBalance] = useState<number | undefined>();
   const [startingBlockDate, setStartingBlockDate] = useState<Date>();
   const [endingBlockDate, setEndingBlockDate] = useState<Date>();
 
@@ -84,7 +84,7 @@ export default function App() {
     }
   }
   async function refreshBalance() {
-    setBalance(0);
+    setBalance(undefined);
     const sats = await getWalletBalance();
     const bsv = sats / 100_000_000;
     setBalance(bsv);
@@ -114,7 +114,7 @@ export default function App() {
         throw new Error("Error fetching current block height");
       const balance = await handleRefreshBalance();
       const bsv = Number(formData.get("bsv"));
-      if (bsv > balance) {
+      if (!balance || bsv > balance) {
         throw new Error("Insufficient balance");
       }
       const totalSats = parseInt((bsv * 100_000_000).toString(), 10);
@@ -282,7 +282,7 @@ export default function App() {
             </a>
           </div>
           <div style={{ marginBottom: "8px" }}>
-            balance: {balance} BSV{" "}
+            balance: {balance ? `${balance.toString()} BSV ` : 'Loading...'} 
             <button onClick={handleRefreshBalance}>refresh balance</button>
           </div>
           <button
