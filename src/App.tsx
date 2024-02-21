@@ -1,7 +1,8 @@
 import { ChangeEvent, useCallback, useEffect, useRef, useState } from "react";
-import { calculateLockIntervals, estimateDatetimeFromBlock, estimateMillisecondsFromBlocks, downloadObjectAsJson } from "./utils";
+import { calculateLockIntervals, estimateDatetimeFromBlock, estimateMillisecondsFromBlocks, downloadObjectAsJson, readFileAsync } from "./utils";
 import humanizeDuration from "humanize-duration";
 import packageJson from '../package.json';
+import { z } from 'zod'
 
 /* Types for global vars from /public/scripts */
 interface Lock {
@@ -25,6 +26,39 @@ declare const getBlock: any;
 declare const clearUTXOs: any;
 declare const unlockCoins: any;
 
+/** Types for lockstream objects */ 
+const LockstreamFileSchema = z.object({
+  app: z.object({
+    name: z.string(),
+    description: z.string(),
+    url: z.string().url(),
+  }).strict(),
+  meta: z.object({
+    createdAt: z.date(),
+    updatedAt: z.date().nullable(),
+    appVersion: z.string(),
+    schemaVersion: z.string(),
+  }).strict(),
+  data: z.object({
+    wallet: z.object({
+      address: z.string(),
+      key: z.string(),
+    }).strict(),
+    tx: z.object({
+      outputs: z.array(z.object({
+        vout: z.number().int().gte(0),
+        satoshis: z.number().int().gt(0),
+        lockUntilHeight: z.number().lt(500_000_000),
+        spent: z.boolean(),
+      }).strict()),
+      broadcasted: z.boolean(),
+      raw: z.string(),
+      hash: z.string(),
+    })
+  }),
+}).strict();
+type LockstreamFileType = z.infer<typeof LockstreamFileSchema>
+
 export default function App() {
   const [connecting, setConnecting] = useState(false);
   const [connectedWalletAddress, setConnectedWalletAddress] = useState("");
@@ -36,10 +70,12 @@ export default function App() {
   const fetchBlock = async () => {
     const block = await getBlock();
     setCurrentBlockCache(block);
+    return block;
   };
   useEffect(() => {
     fetchBlock();
-    setTimeout(fetchBlock, 1000 * 60 * 10);
+    const interval = setInterval(fetchBlock, 1000 * 60 * 10);
+    return () => { clearInterval(interval) }
   }, []);
 
   const [status, setStatus] = useState<"idle" | "submitting">("idle");
@@ -66,8 +102,7 @@ export default function App() {
   }
   async function handleDisconnect() {
     try {
-      // eslint-disable-next-line no-restricted-globals
-      const hasBackup = confirm("have you backed up your keys?");
+      const hasBackup = window.confirm("have you backed up your keys?");
       if (hasBackup) {
         localStorage.clear();
         setConnectedWalletAddress("");
@@ -154,22 +189,38 @@ export default function App() {
         const rawTx = tx.toString()
         const { hash } = tx.toObject();
         console.log('tx hash', hash)
-        const createdAt = (new Date()).toISOString()
-        const saveData = {
-          url: packageJson.homepage,
-          createdAt,
-          updatedAt: "",
-          satoshis: totalSats,
-          payer: {
-            walletAddress: localStorage.getItem("walletAddress"),
-            walletKey: localStorage.getItem("walletKey"),
+        const newLockstreamFile: LockstreamFileType = {
+          app: {
+            name: packageJson.name,
+            description: "",
+            url: packageJson.homepage
           },
-          locks: locks.map(lock => ({
-            ...lock,
-            redeemed: false,
-          })),
+          meta: {
+            createdAt: new Date(),
+            updatedAt: null,
+            appVersion: packageJson.version,
+            schemaVersion: "1",
+          },
+          data: {
+            wallet: {
+              address: localStorage.getItem("walletAddress") as string,
+              key: localStorage.getItem("walletKey") as string,
+            },
+            tx: {
+              outputs: locks.map((lock, i) => ({
+                vout: i,
+                satoshis: lock.satoshis,
+                lockUntilHeight: lock.block,
+                spent: false,
+              })),
+              broadcasted: false,
+              raw: rawTx,
+              hash: hash,
+            },
+          }
         }
-        downloadObjectAsJson(saveData, `bsv_lockstream_${bsvAddress}_${totalSats}sats_${createdAt}.json`);
+        const parsedNewLockstreamFile = LockstreamFileSchema.parse(newLockstreamFile)
+        downloadObjectAsJson(parsedNewLockstreamFile, `lockstream_${hash}.json`);
         return;
         const t = await broadcast(rawTx);
         console.log('broadcasted tx id', t)
@@ -182,7 +233,7 @@ export default function App() {
       setStatus("idle");
     }
   };
-  const handleUnlock: React.FormEventHandler<HTMLFormElement> = async (e) => {
+  const handleLegacyUnlock: React.FormEventHandler<HTMLFormElement> = async (e) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
     try {
@@ -203,6 +254,40 @@ export default function App() {
       setUnlocking(false);
     }
   };
+  const handleUnlockAll: React.FormEventHandler<HTMLFormElement> = async (e) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    try {
+      setUnlocking(true);
+      const file = formData.get("file-input");
+      if (!(file instanceof File)) {
+        return alert('Please select a file.');
+      }
+      if (file.type !== 'application/json') {
+        return alert('Please select a json file.');
+      }
+      try {
+          const content = await readFileAsync(file) as string;
+          const json = LockstreamFileSchema.parse(JSON.parse(content))
+          console.log('file contents:', json)
+          return;
+      } catch (error) {
+          console.error('Error reading file:', error);
+          return alert('An error occurred while reading the file.');
+      }
+      // console.log('file[0]', file && file.fileInput[0])
+      // if (window.confirm(`Confirm unlock of tx ${txid} vout ${vout}`)) {
+      //   const rawTx = await unlockCoins(walletKey, walletAddress, txid, vout);
+      //   const unlockResult = await broadcast(rawTx);
+      //   alert(unlockResult);
+      // }
+    } catch (e) {
+      console.error(e);
+      alert(e);
+    } finally {
+      setUnlocking(false);
+    }
+  };
   function handleChangeStartingBlock(e: ChangeEvent<HTMLInputElement>) {
     if (!currentBlockCache) return;
     setStartingBlockDate(
@@ -215,9 +300,9 @@ export default function App() {
       estimateDatetimeFromBlock(currentBlockCache, Number(e.target.value))
     );
   }
-  const [interval, setInterval] = useState<number>()
+  const [blockInterval, setBlockInterval] = useState<number>()
   function handleChangeInterval(e: ChangeEvent<HTMLInputElement>) {
-    setInterval(Number(e.target.value))
+    setBlockInterval(Number(e.target.value))
   }
 
   return (
@@ -346,7 +431,7 @@ export default function App() {
                 disabled={status === "submitting"}
                 onChange={handleChangeInterval}
               />
-              <span>{interval ? ` ~ ${humanizeDuration(estimateMillisecondsFromBlocks(interval))}` : ""}</span>
+              <span>{blockInterval ? ` ~ ${humanizeDuration(estimateMillisecondsFromBlocks(blockInterval))}` : ""}</span>
             </div>
             <br />
             <button disabled={status === "submitting"}>
@@ -355,8 +440,16 @@ export default function App() {
           </form>
           <br />
           <br />
-          <div>unlock:</div>
-          <form onSubmit={handleUnlock}>
+          <div>unlock with .json file:</div>
+          <form id="upload-file" onSubmit={handleUnlockAll}>
+            <label htmlFor="file-input">Upload file:</label>
+            <input type="file" id="file-input" name="file-input"/>
+            <button type="submit">Submit</button>
+          </form>
+          <br />
+          <br />
+          <div>(legacy) unlock with txid/vout:</div>
+          <form onSubmit={handleLegacyUnlock}>
             <input
               placeholder="txid"
               name="txid"

@@ -1,5 +1,13 @@
-# 🔓 Lockstream
+# Lockstream 🔐💦
 
-Lock bitcoins on interval
+Lock bitcoin into the future with a steady stream of unlockable outputs
 
-Built with [SHUAllet.js](https://github.com/jdh7190/SHUAllet.js)
+## Development
+
+1. `npm install`
+2. `npm run start`
+
+## Built With
+
+- [SHUAllet.js](https://github.com/jdh7190/SHUAllet.js)
+- [shruggr/lockup](https://github.com/shruggr/lockup)

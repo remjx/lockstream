@@ -61,4 +61,18 @@ export function downloadObjectAsJson(data: Object, fileName: string) {
     a.download = fileName;
     a.click();
     URL.revokeObjectURL(url); // Clean up to avoid memory leaks
-  }
+}
+
+export function readFileAsync(file: File) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+            resolve(reader.result);
+        };
+        reader.onerror = () => {
+            reader.abort();
+            reject(new DOMException("Error parsing input file."));
+        };
+        reader.readAsText(file);
+    });
+}
