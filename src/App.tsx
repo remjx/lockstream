@@ -1,6 +1,7 @@
 import { ChangeEvent, useCallback, useEffect, useRef, useState } from "react";
-import { calculateLockIntervals, estimateDatetimeFromBlock, estimateMillisecondsFromBlocks } from "./utils";
+import { calculateLockIntervals, estimateDatetimeFromBlock, estimateMillisecondsFromBlocks, downloadObjectAsJson } from "./utils";
 import humanizeDuration from "humanize-duration";
+import packageJson from '../package.json';
 
 /* Types for global vars from /public/scripts */
 interface Lock {
@@ -13,15 +14,8 @@ interface Payer {
 declare const lockstreamTx: (
   lock: Lock,
   payer: Payer
-) => {
-  bsvtx: any;
-  utxos: {
-    satoshis: number;
-    script: string;
-    txid: string;
-    vout: number;
-  }[];
-};
+) => unknown;
+;
 declare const broadcast: any;
 declare const setupWallet: any;
 declare const restoreWallet: any;
@@ -156,8 +150,29 @@ export default function App() {
           ].block.toLocaleString()}.`
         )
       ) {
-        const rawTx = await lockstreamTx(lock, payer);
+        const tx: any = await lockstreamTx(lock, payer);
+        const rawTx = tx.toString()
+        const { hash } = tx.toObject();
+        console.log('tx hash', hash)
+        const createdAt = (new Date()).toISOString()
+        const saveData = {
+          url: packageJson.homepage,
+          createdAt,
+          updatedAt: "",
+          satoshis: totalSats,
+          payer: {
+            walletAddress: localStorage.getItem("walletAddress"),
+            walletKey: localStorage.getItem("walletKey"),
+          },
+          locks: locks.map(lock => ({
+            ...lock,
+            redeemed: false,
+          })),
+        }
+        downloadObjectAsJson(saveData, `bsv_lockstream_${bsvAddress}_${totalSats}sats_${createdAt}.json`);
+        return;
         const t = await broadcast(rawTx);
+        console.log('broadcasted tx id', t)
         alert("successfully broadcasted tx " + t);
       }
     } catch (e) {

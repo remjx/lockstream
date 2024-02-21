@@ -49,3 +49,16 @@ export function estimateMillisecondsFromBlocks(blocks: number): number {
 //     let differenceInDays = differenceInTime / (1000 * 3600 * 24);
 //     if (intervalDays > differenceInDays) throw new Error("Interval less than duration");
 // }
+
+export function downloadObjectAsJson(data: Object, fileName: string) {
+    const jsonString = JSON.stringify(data);
+    const file = new File([jsonString], fileName, {
+        type: "application/json",
+    });
+    const a = document.createElement("a");
+    const url = URL.createObjectURL(file);
+    a.href = url;
+    a.download = fileName;
+    a.click();
+    URL.revokeObjectURL(url); // Clean up to avoid memory leaks
+  }

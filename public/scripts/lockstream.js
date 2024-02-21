@@ -29,5 +29,5 @@ const lockstreamTx = async(
     bsvtx.to(walletAddress, inputSatoshis - satoshis - txFee);
 
     bsvtx.sign(bsv.PrivateKey.fromWIF(localStorage.walletKey));
-    return bsvtx.toString();
+    return bsvtx;
 }
